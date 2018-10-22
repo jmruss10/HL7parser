@@ -1,5 +1,6 @@
 import sys
 import argparse
+import copy
 
 def fail_help_exit (msg_pass):
     print
@@ -39,14 +40,17 @@ def log_add (logText, *args):
         fail_help_exit(logText)
         
 def trigger_final(segment_dict, master_dict):
-    #Final Trigger: process the trigger, add to master list, clear segment dict. 
     trigger = segment_dict["trigger"]
-    master_dict = { trigger :  {}}
-    #order = segment_dict.pop("order")
-    #print order
-    #master_dict[trigger] = {"order" : [order] }
-    master_dict[trigger] = segment_dict
-    #for dict_seg in segment_dict: master_dict[trigger][dict_seg] = segment_dict[dict_seg]
+    master_dict[trigger] = {}
+    #print segment_dict
+    print master_dict
+    #master_dict[trigger] = copy.deepcopy(segment_dict)
+    #master_dict[trigger]["order"] = copy.deepcopy(segment_dict["order"])
+    for dict_seg in segment_dict: 
+        print dict_seg
+        master_dict[trigger][dict_seg] = copy.deepcopy(segment_dict[dict_seg])
+        print master_dict[trigger][dict_seg]
+        print master_dict
     segment_dict = {"trigger" : "", "order" : []}
     return master_dict
     
@@ -143,13 +147,14 @@ with f:
 
 # print segment_dict["order"]        
 if final_finish == 0:
-    master_dict = trigger_final(segment_dict, master_dict)
+    trigger_final(segment_dict, master_dict)
     finalize(master_dict)
 
 
 print "eGate structure Check:"
 
 for trigger in master_dict.iteritems():
+    #trigger = master_dict[trigger]["trigger"]
     print "Trigger: " + str(trigger)
     print master_dict[trigger]["order"]
     order = master_dict[trigger]["order"]

@@ -9,8 +9,7 @@ def fail_help_exit (msg_pass):
     print msg_pass
     sys.exit()
 
-def segment_dict_setup (segment, trigger):
-    global seg_arb
+def segment_dict_setup (segment, trigger, seg_arb):
     if segment in segment_dict:
         if prev_seg != segment:
             segment = segment + str(seg_arb)
@@ -21,12 +20,11 @@ def segment_dict_setup (segment, trigger):
     #else:
     #    log_add("Segment failure. Dumping dictionary to error file", "dictdump")
     
-def trigger_dict_setup (segment, trigger, segment_dict):
-    segment_dict["trigger"] = trigger
-           
-def order_add (segment, segment_dict):
-        order = str(segment_dict["order"])
-        segment_dict["order"] = order + "," + segment if order != "" else segment
+def segment_dict_reset():
+    #global segment_dict arbitrary_dict
+    segment_dict = {"trigger" : trigger, "order" : []}
+    arbitrary_dict = {}
+    print "*************** SEG RESET ****************"
     
 def log_add (logText, *args):
     log = ""
@@ -41,18 +39,8 @@ def log_add (logText, *args):
         
 def trigger_final(segment_dict, master_dict):
     trigger = segment_dict["trigger"]
-    master_dict[trigger] = {}
-    #print segment_dict
-    print master_dict
-    #master_dict[trigger] = copy.deepcopy(segment_dict)
-    #master_dict[trigger]["order"] = copy.deepcopy(segment_dict["order"])
-    for dict_seg in segment_dict: 
-        print dict_seg
-        master_dict[trigger][dict_seg] = copy.deepcopy(segment_dict[dict_seg])
-        print master_dict[trigger][dict_seg]
-        print master_dict
+    master_dict[trigger] = copy.deepcopy(segment_dict)
     segment_dict = {"trigger" : "", "order" : []}
-    return master_dict
     
 def finalize(master_dict):
     out_file = DEFAULT_FILE_LOC + "output.txt"
@@ -91,10 +79,13 @@ msg_cnt = 0
 prev_seg = ""
 seg_arb = 1
 cur_trigger = ""
+arbitrary_dict = { }
 segment_dict = { "trigger" : "", "order" : []}
 master_dict = { }
 file_w_path=DEFAULT_FILE_LOC + args.file
 final_finish=0
+seg_comb = ""
+order = []
 
 try: 
     f = open(file_w_path)
@@ -104,59 +95,84 @@ except IOError as e:
 with f:
     for line in f.readlines():
         msg_cnt += 1
-    
         for segment in line.split():
             if '^' in segment:
                 trigger = segment.split("^", 2)[1]
                 if trigger not in segment_dict:
-                    trigger_dict_setup(segment, trigger, segment_dict)
+                    arbitrary_dict = {}
+                    segment_dict = {"trigger" : "", "order" : [] }
                     final_finish=0
                     prev_seg = ""
+                    print "************* RESET ***********"
                     continue
                 elif trigger != segment_dict["trigger"]:
                     master_dict = trigger_final(segment_dict, master_dict)
                     final_finish=1
             else:
                 trigger = segment_dict["trigger"]
-        
+                
             if segment in segment_dict:
-                seg_rep = segment_dict[segment]["repeating"]
-                seg_rqd = segment_dict[segment]["required"]
-                seg_cnt = segment_dict[segment]["count"]
+                seg_data = segment_dict[segment]
+                seg_rep = seg_data["repeating"]
+                seg_rqd = seg_data["required"]
+                seg_cnt = seg_data["count"]
+                seg_prec = seg_data["preceding"]
             else:
-                segment_dict_setup(segment, trigger)
-                seg_rep, seg_rqd, seg_cnt = 0,0,0
-        
+                segment_dict_setup(segment, trigger, 0)
+                seg_rep, seg_rqd, seg_cnt, seg_arb, seg_prec = 0,0,0,0,[]
+                seg_data = {"repeating" : 0, "required" : 0, "count" : 0, "preceding" : [] }
+            order = segment_dict["order"]
             seg_rep += 1
         
             if prev_seg != segment: 
                 seg_cnt += 1
-                if segment not in segment_dict[segment]["preceding"]: 
-                    segment_dict["order"].append(segment)
-                    segment_dict[segment]["preceding"].append(prev_seg)
+                prec1 = seg_data["preceding"]
+                if prev_seg not in seg_prec and segment not in order: 
+                    prec2 = "N N"
+                    order.append(segment)
+                    seg_prec.append(prev_seg)
+                elif prev_seg in seg_prec and segment in order:
+                    prec2 = "Y Y"
+                    """ Rethink the following logic. 
+                    If it is the first of a new line, and it is in the order, skip. how about if the arb is in the order, skip? Define arbitrary number,
+                    then check? So the segment is already in both, so check again to see if the segment ARB is in both if the arb is < 1. 
+                    """
+                    if segment in arbitrary_dict:
+                        arbitrary_dict[segment] += 1
+                        seg_arb = arbitrary_dict[segment]
+                    else:
+                        arbitrary_dict[segment], seg_arb = 1,1
+                        
+                    seg_comb = segment + str(seg_arb)
+                    if seg_comb not in order: 
+                        order.append(segment + str(seg_arb))
+                        seg_prec.append(prev_seg)
+                elif prev_seg in seg_prec and segment not in order:
+                    prec2 = "Y N"
+                    order.append(segment)
                 else:
-                    seg_arb += 1
-                    segment_dict["order"].append(segment + str(seg_arb))
-                    segment_dict[segment]["preceding"].append(prev_seg)
-                
-            segment_dict[segment]["required"] = 1 if seg_cnt == msg_cnt else 0
-            segment_dict[segment]["repeating"] = seg_rep
-            segment_dict[segment]["count"] = msg_cnt
+                    prec2 = "N Y"
+                    seg_prec.append(prev_seg)
+            else:
+                continue
+                    
+            print segment, prec1, seg_prec, prec2, seg_comb
+            seg_data["required"] = 1 if seg_cnt == msg_cnt else 0
+            seg_data["repeating"] = seg_rep
+            seg_data["count"] = msg_cnt
+            seg_data["preceding"] = seg_prec
             prev_seg = segment
-        
+            segment_dict[segment] = seg_data
 
-# print segment_dict["order"]        
 if final_finish == 0:
     trigger_final(segment_dict, master_dict)
     finalize(master_dict)
 
-
+print order
 print "eGate structure Check:"
-
-for trigger in master_dict.iteritems():
-    #trigger = master_dict[trigger]["trigger"]
+"""
+for trigger, data in master_dict.iteritems():
     print "Trigger: " + str(trigger)
-    print master_dict[trigger]["order"]
     order = master_dict[trigger]["order"]
     print "Order: " + "[%s] " % ", ".join(map(str, order))
     for segment in order:
@@ -172,15 +188,4 @@ for trigger in master_dict.iteritems():
                                    "Required?: " + rqd.ljust(4) + \
                                    "Repeated: " + str(rep).ljust(4) + \
                                    "Preceded by: " + '[%s]' % ', '.join(map(str, prec))
-
-        
-#    Check the message type
-#    If it is a new message type, write any outputs to a file and clear variables (Possibly set order, etc stuff)
-#    Split the segment into SEGMENT and NUMBER
-#    Add the segment to a simple count dictionary for REQUIRED.
-#    if the simple count != messageCounter
-#      set required to 1
-#    if NUMBER > 1
-#      set repeating to 1
-#    if the segment is already in the dictionary, pull values to compare to see if they are already repeating/required and reset if necessary
-#    Add to a count to a dictionary that has SEGMENT as the key, REQUIRED, REPEATING, and segments that segment follows (Ex 1)
+"""
